@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+from os.path import dirname, abspath
+import sys
+import socket
+
+import pandas as pd
+
+
+def main(*args):
+    if len(args) < 2:
+        print(f"usage: python3 {args[0]} <port>")
+        sys.exit(1)
+
+    UDP_PORT = int(args[1])
+
+    CURR_DIR = abspath(dirname(args[0]))
+    entries = pd.read_csv(f'{CURR_DIR}/data.csv')
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('', UDP_PORT))
+
+    while True:
+        data, addr = sock.recvfrom(1024)
+        query = data.decode().lower()
+        if query.startswith("all"):
+            result = entries.to_json(orient='records')
+        else:
+            try:
+                result = entries[entries['Item ID'] ==
+                                 int(data)].to_json(orient='records')
+            except ValueError as e:
+                result = f'[{{"error":"{str(e)}"}}]'
+
+        sock.sendto(result.encode("UTF-8"), addr)
+
+
+if __name__ == "__main__":
+    main(*sys.argv)
