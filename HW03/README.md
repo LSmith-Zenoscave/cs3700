@@ -14,5 +14,5 @@ $ ./run.sh HW03/client/client
 $ cd /home/lsmit202/
 $ export LSMITH_HOME="${PWD}" # save the cwd so that we can use run.sh
 $ cd HW03  # (this will set the server bind path.)
-$ ${LSMITH_HOME}/run.sh HW03/server/server  
+$ ${LSMITH_HOME}/run.sh ./server/server  
 ```
