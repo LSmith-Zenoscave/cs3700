@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+import os
+import sys
+import socket
+import time
+import urllib.parse
+
+SUPPORTED_HTTP_METHODS = ["GET", "POST", "PUT"]
+
+
+def main():
+    TCP_IP = input("Enter DNS Host name/ip: ")
+    TCP_PORT = int(input("Enter host port number: "))
+    SERVER_SOCK = (TCP_IP, TCP_PORT)
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sfile = sock.makefile()
+
+    tcp_rtt_start = time.time()
+    sock.connect(SERVER_SOCK)
+    tcp_rtt_end = time.time()
+
+    tcp_rtt = (tcp_rtt_end - tcp_rtt_start) * 1000
+    print(f"TCP RTT: {tcp_rtt:3.3g}ms. ")
+
+    while True:
+        while True:
+            http_method = input("Enter HTTP Request method: ").upper()
+            http_url = input("Enter HTTP Request URL: ")
+            http_proto = input("Enter HTTP Protocol version: ")
+            http_agent = input("Enter User-Agent name: ")
+
+            if http_method not in SUPPORTED_HTTP_METHODS:
+                print(f"Invalid method '{http_method}'. " +
+                      f"Must be one of {SUPPORTED_HTTP_METHODS}",
+                      file=sys.stderr)
+                continue
+
+            if not http_url.startswith('/'):
+                print(f"Invalid url '{http_url}'. " +
+                      "Must begin with '/'", file=sys.stderr)
+                continue
+
+            if not http_proto.startswith('HTTP/1.'):
+                print(f"Invalid protocol version '{http_proto}'. " +
+                      "Ex. 'HTTP/1.1'", file=sys.stderr)
+
+            break
+
+        request = f"""{http_method} {urllib.parse.quote(http_url)} {http_proto}
+Host: {TCP_IP}:{TCP_PORT}
+User-Agent: {http_agent}
+
+"""
+
+        http_rtt_start = time.time()
+        sock.send(request.encode())
+        resp_line = sfile.readline() .strip("\r\n")
+        http_rtt_end = time.time()
+
+        http_rtt = (http_rtt_end - http_rtt_start) * 1000
+        print(f"HTTP RTT: {http_rtt:3.3g}ms. ")
+        print(resp_line)
+
+        _, code, message = resp_line.split(" ", 2)
+
+        resp_headers = {}
+        while True:
+            resp_header = sfile.readline().strip("\r\n")
+            print(resp_header)
+            if resp_header == "":
+                break
+            key, value = resp_header.split(":", 1)
+            resp_headers[key.lower()] = value.lstrip(" ")
+
+        if code == "200":
+            file_name = os.path.basename(
+                http_url) if not http_url.endswith('/') else "index.html"
+            with open(file_name, 'w') as body_file:
+                if "content-length" in resp_headers:
+                    content_length = int(resp_headers["content-length"])
+                    body_file.write(sfile.read(content_length))
+                else:
+                    blank_counter = 0
+                    while True:
+                        line = sfile.readline()
+                        if line == "\r\n":
+                            blank_counter += 1
+                        else:
+                            blank_counter = 0
+                        if blank_counter >= 4:
+                            break
+                        body_file.write(line)
+            sfile.close()
+        else:
+            print(f"Recieved {message} from server. No file downloaded")
+
+        ans = ""
+        while ans not in ["y", "n"]:
+            ans = input('Do another request? (y/n): ').lower()
+
+        if ans == 'n':
+            break
+
+    sock.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -40,25 +40,37 @@ class BaseHTTPRequestHandler(socketserver.StreamRequestHandler):
 
     responses = {
         status: status.phrase
-        for status in HTTPStatus.__members__.values()
+        for status in HTTPStatus
     }
 
     def handle(self):
         """Handle a single HTTP request.
         """
         try:
-            raw_requestline = self.rfile.readline(4097)
-            if len(raw_requestline) > 4096:
+            raw_requestline = self.rfile.readline(65537)
+            if len(raw_requestline) > 65536:
                 self.send_error(
                     HTTPStatus.REQUEST_URI_TOO_LONG, "Request URI too long")
                 return
             if not raw_requestline:
                 return
 
-            words = (str(raw_requestline, 'iso-8859-1')
-                     .rstrip('\r\n')
-                     .split())
-            command, path = words[:2]
+            stripped_requestline = (str(raw_requestline, 'iso-8859-1')
+                                    .rstrip('\r\n'))
+
+            headers = []
+            while True:
+                current_header = self.rfile.readline(65537)
+                if not current_header:
+                    break
+                stripped_header = (str(current_header, 'iso-8859-1')
+                                   .rstrip('\r\n'))
+                if stripped_header == "":
+                    break
+                headers.append(stripped_header)
+
+            command, path, proto = stripped_requestline.split(" ", 2)
+            print("----", stripped_requestline, *headers, sep="\n")
 
             mname = 'do_' + command
             if not hasattr(self, mname):
@@ -67,18 +79,18 @@ class BaseHTTPRequestHandler(socketserver.StreamRequestHandler):
                     f"Unsupported method {command.upper()}")
                 return
             method = getattr(self, mname)
-            method(path)
+            method(path, proto)
             self.wfile.flush()
         except socket.timeout:
             return
 
-    def send_error(self, code, message):
+    def send_error(self, code, message, proto=None):
         """Send error reply"""
-        self.send_response(code, message)
+        self.send_response(code, message, proto=proto)
         self.send_header('Connection', 'close')
         self.end_headers()
 
-    def send_response(self, code, message=None):
+    def send_response(self, code, message=None, proto=None):
         """send the response line"""
         if message is None:
             if code in self.responses:
@@ -86,10 +98,13 @@ class BaseHTTPRequestHandler(socketserver.StreamRequestHandler):
             else:
                 message = ''
 
+        if proto is None or not proto.startswith("HTTP/1."):
+            proto = "HTTP/1.1"
+
         if not hasattr(self, '_headers_buffer'):
             self._headers_buffer = []
         self._headers_buffer.append(
-            f"HTTP/1.1 {code} {message}\r\n".encode('latin-1', 'strict'))
+            f"{proto} {code} {message}\r\n".encode('latin-1', 'strict'))
         self.send_header('Server', 'Simpler HTTPServer 0.1')
         self.send_header('Date', email.utils.formatdate(
             time.time(), usegmt=True))
@@ -113,7 +128,7 @@ class BaseHTTPRequestHandler(socketserver.StreamRequestHandler):
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     directory = os.getcwd()
 
-    def do_GET(self, path):
+    def do_GET(self, path, proto):
         path = os.path.join(self.directory, path.lstrip('/'))
         if os.path.isdir(path):
             path = os.path.join(path, 'index.html')
@@ -121,7 +136,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
             mime, _ = mimetypes.guess_type(path)
             with open(path, 'rb') as file:
                 fstat = os.fstat(file.fileno())
-                self.send_response(HTTPStatus.OK)
+                self.send_response(HTTPStatus.OK, proto=proto)
                 self.send_header("Content-Length", str(fstat[6]))
                 if mime is not None:
                     self.send_header("Mime-Type", mime)
@@ -131,7 +146,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
                 finally:
                     pass  # try/finally ensures file object context closes
         else:
-            self.send_error(HTTPStatus.NOT_FOUND, 'File not found')
+            self.send_error(HTTPStatus.NOT_FOUND, 'File not found', proto)
 
 
 def _get_best_family(port):
