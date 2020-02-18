@@ -5,12 +5,14 @@
 
 ```shell
 $ cd /home/lsmit202/
-$ ./run.sh HW03/client/client <server FQDN/IP> <server port>
+$ ./run.sh HW03/client/client
 ```
 
 * to run server (on cs3700a):
 
 ```shell
 $ cd /home/lsmit202/
-$ ./run.sh HW03/server/server <local port>
+$ export LSMITH_HOME="${PWD}" # save the cwd so that we can use run.sh
+$ cd HW03  # (this will set the server bind path.)
+$ ${LSMITH_HOME}/run.sh HW03/server/server  
 ```
