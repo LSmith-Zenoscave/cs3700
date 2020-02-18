@@ -1,4 +1,4 @@
-# CS4050
+# CS3700
 Networks Assignments
 
 [HW 02](./HW02/README.md)

@@ -1,10 +1,11 @@
-#!python3
+#!/usr/bin/env python3
 """This code is intended to be a stripped down http server
 based on the python3 stdlib http.server module.
 
 Intended for study purposes only, not suitable for production.
 """
 import email.utils
+import mimetypes
 import os
 import shutil
 import socket
@@ -115,19 +116,21 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self, path):
         path = os.path.join(self.directory, path.lstrip('/'))
         if os.path.isdir(path):
-            self.send_error(HTTPStatus.NOT_FOUND, 'File not found')
-            return
-        try:
+            path = os.path.join(path, 'index.html')
+        if os.path.isfile(path):
+            mime, _ = mimetypes.guess_type(path)
             with open(path, 'rb') as file:
                 fstat = os.fstat(file.fileno())
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Length", str(fstat[6]))
+                if mime is not None:
+                    self.send_header("Mime-Type", mime)
                 self.end_headers()
                 try:
                     shutil.copyfileobj(file, self.wfile)
                 finally:
                     pass  # try/finally ensures file object context closes
-        except OSError:
+        else:
             self.send_error(HTTPStatus.NOT_FOUND, 'File not found')
 
 
@@ -159,9 +162,5 @@ def run(port=6000):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print(f"usage: python3 {sys.argv[0]} <port>")
-        sys.exit(1)
-
-    port = int(sys.argv[1])
-    run(port)
+    port = input("Enter port to run on: ")
+    run(int(port))
