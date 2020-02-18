@@ -13,17 +13,17 @@ def main():
     TCP_PORT = int(input("Enter host port number: "))
     SERVER_SOCK = (TCP_IP, TCP_PORT)
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sfile = sock.makefile()
-
-    tcp_rtt_start = time.time()
-    sock.connect(SERVER_SOCK)
-    tcp_rtt_end = time.time()
-
-    tcp_rtt = (tcp_rtt_end - tcp_rtt_start) * 1000
-    print(f"TCP RTT: {tcp_rtt:3.3g}ms. ")
-
     while True:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sfile = sock.makefile()
+
+        tcp_rtt_start = time.time()
+        sock.connect(SERVER_SOCK)
+        tcp_rtt_end = time.time()
+
+        tcp_rtt = (tcp_rtt_end - tcp_rtt_start) * 1000
+        print(f"TCP RTT: {tcp_rtt:3.3g}ms. ")
+
         while True:
             http_method = input("Enter HTTP Request method: ").upper()
             http_url = input("Enter HTTP Request URL: ")
@@ -44,6 +44,7 @@ def main():
             if not http_proto.startswith('HTTP/1.'):
                 print(f"Invalid protocol version '{http_proto}'. " +
                       "Ex. 'HTTP/1.1'", file=sys.stderr)
+                continue
 
             break
 
@@ -91,7 +92,6 @@ User-Agent: {http_agent}
                         if blank_counter >= 4:
                             break
                         body_file.write(line)
-            sfile.close()
         else:
             print(f"Recieved {message} from server. No file downloaded")
 
@@ -99,10 +99,11 @@ User-Agent: {http_agent}
         while ans not in ["y", "n"]:
             ans = input('Do another request? (y/n): ').lower()
 
+        sfile.close()
+        sock.close() 
+
         if ans == 'n':
             break
-
-    sock.close()
 
 
 if __name__ == "__main__":
