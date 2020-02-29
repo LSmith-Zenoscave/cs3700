@@ -1,0 +1,118 @@
+#!python3
+
+from enum import Enum
+from threading import Thread
+import socket
+import signal
+import re
+
+
+class GracefulKiller:
+    kill_now = False
+
+    def __init__(self):
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
+
+    def exit_gracefully(self, signum, frame):
+        del signum
+        del frame
+        self.kill_now = True
+
+
+class State(Enum):
+    BEGIN = 0
+    HELO = 1
+    FROM = 2
+    TO = 3
+    DATA = 4
+    MESG = 5
+    DONE = 6
+
+
+class SMTPServerThread(Thread):
+
+    def __init__(self, sock, client):
+        super(SMTPServerThread, self).__init__()
+        self.server_name = socket.getfqdn()
+        self.sock = sock
+        self.client = client
+
+        self.correct_command = {
+            State.HELO: r"^HELO .*",
+            State.FROM: r"^MAIL FROM: .*",
+            State.TO: r"^RCPT TO: .*",
+            State.DATA: r"^DATA$",
+            State.MESG: r"^\.$",
+        }
+
+        self.success_message = {
+            State.HELO: f"250 {self.server_name} hello {self.client[0]}",
+            State.FROM: f"250 2.1.0 Sender OK",
+            State.TO: f"250 2.1.5 Recipient OK",
+            State.DATA: f"354 Start mail input",
+            State.MESG: f"250 Message recieved and to be delivered",
+        }
+
+        self.failure_message = {
+            State.HELO: f"503 5.5.2 Send hello first",
+            State.FROM: f"503 5.5.2 Need mail command",
+            State.TO: f"503 5.5.2 Need rcpt command",
+            State.DATA: f"503 5.5.2 Need data command",
+            State.MESG: None,
+        }
+
+        self.next_state = {
+            State.HELO: State.FROM,
+            State.FROM: State.TO,
+            State.TO: State.DATA,
+            State.DATA: State.MESG,
+            State.MESG: State.HELO,
+        }
+
+    def send(self, message):
+        self.sock.send(bytes(f"{message}\r\n", "UTF-8"))
+
+    def run(self):
+        state = State.BEGIN
+        with self.sock:
+            fsock = self.sock.makefile()
+            while state != State.DONE:
+                if state == State.BEGIN:
+                    self.send(f"220 {self.server_name}")
+                    state = State.HELO
+                else:
+                    line = fsock.readline().strip("\r\n")
+                    print(line)
+                    if line == "QUIT" and state != State.MESG:
+                        self.send(f"221 {self.server_name} closing connection")
+                        state = State.DONE
+                    elif re.match(self.correct_command[state], line):
+                        self.send(self.success_message[state])
+                        state = self.next_state[state]
+                    else:
+                        message = self.failure_message[state]
+                        if message is not None:
+                            self.send(message)
+
+
+def main():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    sock.bind(('0.0.0.0', 5290))
+    sock.listen(1)
+    threads = []
+    killer = GracefulKiller()
+    while not killer.kill_now:
+        thread = SMTPServerThread(*sock.accept())
+        thread.start()
+        threads.append(thread)
+
+    for thread in threads:
+        thread.join()
+    sock.close()
+
+
+if __name__ == "__main__":
+    main()
