@@ -2,8 +2,10 @@
 
 from enum import Enum
 from threading import Thread
+import linecache
 import socket
 import signal
+import sys
 import re
 
 
@@ -76,24 +78,44 @@ class SMTPServerThread(Thread):
     def run(self):
         state = State.BEGIN
         with self.sock:
-            fsock = self.sock.makefile()
-            while state != State.DONE:
-                if state == State.BEGIN:
-                    self.send(f"220 {self.server_name}")
-                    state = State.HELO
-                else:
-                    line = fsock.readline().strip("\r\n")
-                    print(line)
-                    if line == "QUIT" and state != State.MESG:
-                        self.send(f"221 {self.server_name} closing connection")
-                        state = State.DONE
-                    elif re.match(self.correct_command[state], line):
-                        self.send(self.success_message[state])
-                        state = self.next_state[state]
+            try:
+                fsock = self.sock.makefile()
+                while state != State.DONE:
+                    if state == State.BEGIN:
+                        self.send(f"220 {self.server_name}")
+                        state = State.HELO
                     else:
-                        message = self.failure_message[state]
-                        if message is not None:
-                            self.send(message)
+                        line = fsock.readline().strip("\r\n")
+                        print(line)
+                        if line == "QUIT" and state != State.MESG:
+                            self.send(
+                                f"221 {self.server_name} closing connection")
+                            state = State.DONE
+                        elif re.match(self.correct_command[state], line):
+                            self.send(self.success_message[state])
+                            state = self.next_state[state]
+                        else:
+                            message = self.failure_message[state]
+                            if message is not None:
+                                self.send(message)
+            except Exception:
+                self.printErr()
+                state = State.DONE
+            finally:
+                if fsock is not None:
+                    fsock.close()
+
+    def printErr(self):
+        exc_type, exc_obj, tb = sys.exc_info()
+        f = tb.tb_frame
+        lineno = tb.tb_lineno
+        filename = f.f_code.co_filename
+        linecache.checkcache(filename)
+        line = linecache.getline(filename, lineno, f.f_globals)
+        print(
+            f'EXCEPTION IN ({filename}:{lineno}): {line.strip()}\n' +
+            f'\t{type(exc_obj).__name__}: {str(exc_obj)}'
+        )
 
 
 def main():
@@ -102,12 +124,19 @@ def main():
 
     sock.bind(('0.0.0.0', 5290))
     sock.listen(1)
+    sock.settimeout(.2)
     threads = []
     killer = GracefulKiller()
     while not killer.kill_now:
-        thread = SMTPServerThread(*sock.accept())
-        thread.start()
-        threads.append(thread)
+        try:
+            thread = SMTPServerThread(*sock.accept())
+        except socket.timeout:
+            pass
+        except:
+            raise
+        else:
+            thread.start()
+            threads.append(thread)
 
     for thread in threads:
         thread.join()
