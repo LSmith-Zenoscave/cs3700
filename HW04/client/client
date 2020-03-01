@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+import smtplib
+from email.message import EmailMessage
+
+def main():
+    server = input("server FQDN or ip: ")
+    smtp = smtplib.SMTP(server, port=5290)
+    smtp.set_debuglevel(2)
+    while True:
+        sendMessage(smtp)
+        if input("send another? [Y/n] ").lower() == "n":
+            break
+    smtp.quit()
+
+def sendMessage(smtp):
+    msg = EmailMessage()
+    msg["From"] = input("Sender Email: ")
+    msg["To"] = input("Recipient Email: ")
+    msg["Subject"] = input("Email Subject: ")
+
+    message= []
+    print("Enter message with a single period (\".\") on its own line to end")
+    while True:
+        line = input("> ")
+        if line != ".":
+            message.append(line)
+        else:
+            break
+
+    msg.set_content("\r\n".join(message))
+    smtp.send_message(msg)
+
+if __name__ == '__main__':
+    main()
