@@ -42,8 +42,8 @@ class SMTPServerThread(Thread):
 
         self.correct_command = {
             State.HELO: r"^HELO .*",
-            State.FROM: r"^MAIL FROM: .*",
-            State.TO: r"^RCPT TO: .*",
+            State.FROM: r"^MAIL FROM:.*",
+            State.TO: r"^RCPT TO:.*",
             State.DATA: r"^DATA$",
             State.MESG: r"^\.$",
         }
@@ -69,7 +69,7 @@ class SMTPServerThread(Thread):
             State.FROM: State.TO,
             State.TO: State.DATA,
             State.DATA: State.MESG,
-            State.MESG: State.HELO,
+            State.MESG: State.FROM,
         }
 
     def send(self, message):
@@ -87,11 +87,14 @@ class SMTPServerThread(Thread):
                     else:
                         line = fsock.readline().strip("\r\n")
                         print(line)
-                        if line == "QUIT" and state != State.MESG:
+                        if line.upper() == "QUIT" and state != State.MESG:
                             self.send(
                                 f"221 {self.server_name} closing connection")
                             state = State.DONE
-                        elif re.match(self.correct_command[state], line):
+                        elif line.upper() == "RSET" and state != State.MESG:
+                            self.send("250 OK")
+                            state = State.HELO
+                        elif re.match(self.correct_command[state], line.upper()):
                             self.send(self.success_message[state])
                             state = self.next_state[state]
                         else:
